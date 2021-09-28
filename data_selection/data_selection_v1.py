@@ -114,7 +114,7 @@ def verify_freq(org_data, col_name):
 
 
 
-def process_org_data(data_name, type, y_name):
+def process_org_data(data_name, type):
     """
     筛选原始数据
     :param data_name:  数据的名称，一般是 y + 城市名字
@@ -129,6 +129,12 @@ def process_org_data(data_name, type, y_name):
     elif type == "先行指标":
         type_full = "先行性指标筛选结果_自定义相关系数"
     org_data = pd.read_excel('./data/' + data_name + type_full + '.xlsx', sheet_name='原始数据')
+
+    # 这里定义y_name是除了"日期"之外的第一列
+    if org_data.columns[0] == '日期':
+        y_name = org_data.columns[1]
+    else:
+        "第0列不是日期，y_name会是第1列吗"
     
     # 如果 org_data 原始数据的第一行是滞后期数，将其删除就好
     if "滞" in org_data.iloc[0, 0]:
@@ -254,6 +260,8 @@ def build_table(data_name, type, sheet_Vn, org_data, y_name):
     # org_data = process_org_data(data_name, '地区生产总值')
     # type = '解释变量'
     # y_name = '地区生产总值'
+
+
 
     if type == "解释变量":
         type_full = "解释变量筛选结果"
@@ -392,44 +400,81 @@ def build_table(data_name, type, sheet_Vn, org_data, y_name):
     return logical_tb
 
 
+def check_Vn(v_jsbl:list, v_xxzb:list):
+    if v_jsbl == v_xxzb:
+        return list(zip(v_jsbl, v_xxzb))
+    else:
+        permutation = []
+        for i in v_jsbl:
+            for j in v_xxzb:
+                permutation.append((i, j))
+        return permutation
 
-def get_outcome(data_name_list, sheet_Vn_list, y_name, type_list=['解释变量', '先行指标']):
+
+def get_outcome(data_name_list):
     """
     构建表格
     :param data_name_list: 包括 data_name 的 list
     :param sheet_Vn_list:  包括 sheet_Vn 的 list
-    :param y_name:         y 的名称
     :param type_list:      ['解释变量', '先行指标']
     """
+    type_list = ['解释变量', '先行指标']
     for data_name in data_name_list:
-        for sheet_Vn in sheet_Vn_list:
+        for type in type_list:
+            if type == "解释变量":
+                type_full = "解释变量筛选结果"
+                v_jsbl_list = pd.ExcelFile('./data/' + data_name + type_full + '.xlsx').sheet_names
+                v_jsbl_list = [i for i in v_jsbl_list if i[0] in ['v', 'V']]
+
+            elif type == "先行指标":
+                type_full = "先行性指标筛选结果_自定义相关系数"
+                v_xxzb_list = pd.ExcelFile('./data/' + data_name + type_full + '.xlsx').sheet_names
+                v_xxzb_list = [i for i in v_xxzb_list if i[0] in ['v', 'V']]
+
+        Vn_pairs = check_Vn(v_jsbl_list, v_xxzb_list)
+
+
+        for (v_jsbl, v_xxzb) in Vn_pairs:
+
             logical_tbs = []
-            for type in type_list:
-                org_data = process_org_data(data_name, type, y_name)
-                logical_tb = build_table(data_name, type, sheet_Vn, org_data, y_name)
-                logical_tbs.append(logical_tb)
+
+            type = "解释变量"
+            org_data = process_org_data(data_name, type)
+            y_name = org_data.columns[1]
+            logical_tb = build_table(data_name, type, v_jsbl, org_data, y_name)
+            logical_tbs.append(logical_tb)
+
+            type = "先行指标"
+            org_data = process_org_data(data_name, type)
+            y_name = org_data.columns[1]
+            logical_tb = build_table(data_name, type, v_xxzb, org_data, y_name)
+            logical_tbs.append(logical_tb)
+
             logical_cat_tb = pd.concat(logical_tbs)
-            logical_cat_tb.to_excel(f"./result/{data_name}-逻辑表-{sheet_Vn}.xlsx")
-            print(f"Finish output excel", f"{data_name}-逻辑表-{sheet_Vn}.xlsx")
+            logical_cat_tb.to_excel(f"./result/{data_name}-逻辑表-解释变量{v_jsbl}-先行指标{v_xxzb}.xlsx")
+            print(f"Finish output excel", f"{data_name}-逻辑表-解释变量{v_jsbl}-先行指标{v_xxzb}.xlsx")
 
 
-def main():
-
-    # 处理中山地区的数据
-    data_name_list = ["地区生产总值-中山"]
-    type_list = ['解释变量', '先行指标']
-    sheet_Vn_list = ['v1', 'v2', 'v3', 'v4', 'v5']
-    y_name = '地区生产总值+万元+EX_ST_46_ZHZB'
-    get_outcome(data_name_list, sheet_Vn_list, y_name, type_list)
+def main(data_name_list):
+    get_outcome(data_name_list)
 
 
-    # 处理江门地区的数据
-    data_name_list = ["地区生产总值-江门"]
-    type_list = ['解释变量', '先行指标']
-    sheet_Vn_list = ['V1', 'V2', 'V3', 'V4']
-    y_name = '地区生产总值'
-    get_outcome(data_name_list, sheet_Vn_list, y_name, type_list)
+# def main():
+#
+#     # 处理中山地区的数据
+#     data_name_list = ["地区生产总值-中山"]
+#     type_list = ['解释变量', '先行指标']
+#     sheet_Vn_list = ['v1', 'v2', 'v3', 'v4', 'v5']
+#     get_outcome(data_name_list, sheet_Vn_list, type_list)
+#
+#
+#     # 处理江门地区的数据
+#     data_name_list = ["地区生产总值-江门"]
+#     type_list = ['解释变量', '先行指标']
+#     sheet_Vn_list = ['V1', 'V2', 'V3', 'V4']
+#     y_name = '地区生产总值'
+#     get_outcome(data_name_list, sheet_Vn_list, type_list)
 
 
 if __name__ == '__main__':
-    main()
+    main(data_name_list= ["地区生产总值-北京", "地区生产总值-江门"])
