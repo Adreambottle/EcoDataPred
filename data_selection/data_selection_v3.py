@@ -448,10 +448,11 @@ def get_outcome(data_name_list):
             org_data = process_org_data(data_name, type)
             y_name = org_data.columns[1]
             logical_tb = build_table(data_name, type, v_xxzb, org_data, y_name)
+            logical_tb = logical_tb[1:]
             logical_tbs.append(logical_tb)
 
             logical_cat_tb = pd.concat(logical_tbs)
-            logical_cat_tb.to_excel(f"./result/{data_name}-逻辑表-解释变量{v_jsbl}-先行指标{v_xxzb}.xlsx")
+            logical_cat_tb.to_excel(f"./result/{data_name}-逻辑表-解释变量{v_jsbl}-先行指标{v_xxzb}.xlsx", index=False)
             print(f"Finish output excel", f"{data_name}-逻辑表-解释变量{v_jsbl}-先行指标{v_xxzb}.xlsx")
 
 
@@ -477,4 +478,4 @@ def main(data_name_list):
 
 
 if __name__ == '__main__':
-    main(data_name_list= ["地区生产总值-北京", "地区生产总值-江门"])
+    main(data_name_list= ["地区生产总值-中山", "地区生产总值-江门"])
