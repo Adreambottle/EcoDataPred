@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 def zh_to_datetime(date):
     year, month = re.split('年|月', date)[:2]
@@ -26,25 +26,35 @@ def datetime_to_zh(date):
 
 
 
-def generate_time(year, month, k):
+def generate_time(year, month, k:int):
     """
     用于生成 y年m月 之后 k 期的月份名称
     :param k: 是k期，不包括本月
     :return: 返回的是一个list
     """
-    date = []
+    date_index_list = []
     for i in range(k):
-        if month < 12:
-            month = month + 1
-        elif month == 12:
-            year = year + 1
-            month = 1
-        if month < 10:
-            m = '0' + str(month)
-            date.append('%s年%s月' % (year, m))
-        else:
-            date.append('%s年%s月' % (year, month))
-    return date
+
+
+        month_total = month + i
+        year_add = month_total // 12
+        month_real = month_total % 12
+        print(month_real)
+
+        date = datetime(year=year+year_add, month=month_real, day=1)
+        date_index_list.append(date)
+
+    return date_index_list
+
+
+def add_index(data:pd.DataFrame, k):
+    # data = org_data
+    data_index = data.index
+    now = data_index[-1]
+    index_add = pd.date_range(start=now, periods=k+1, freq='MS')[1:]
+    for i in range(len(index_add)):
+        data.loc[index_add[i]] = np.nan
+    return data
 
 
 
@@ -101,9 +111,9 @@ def output_2type_tb(data_name, type, y_tb, M_tb, S_tb, v_xx=None, v_js=None):
     :param S_tb: 构建 sheet 季度数据
     """
     if type == "先行指标":
-        name = f'./result/{data_name}-{type}-{v_xx}.xlsx'
+        name = f'./result/{data_name}-{type}{v_xx}.xlsx'
     if type == "解释变量":
-        name = f'./result/{data_name}-{type}-{v_js}-先行-{v_xx}.xlsx'
+        name = f'./result/{data_name}-{type}{v_js}-先行{v_xx}.xlsx'
 
     with pd.ExcelWriter(name) as writer:
         blank_tb = pd.DataFrame()
@@ -138,10 +148,10 @@ def process_org_data(data_name, type, sheet_Vn):
 
 
     # data_name = '地区生产总值-北京'
-    # sheet_Vn = 'v5'
+    # sheet_Vn = 'v1'
     # type = '先行指标'
     # y_name = '地区生产总值'
-    # org_data = process_org_data(data_name, '地区生产总值')
+    # org_data = process_org_data(data_name, type, sheet_Vn)
 
     # type 是"解释变量"还是"先行指标" 确定文件名
     if type == "解释变量":
@@ -235,43 +245,71 @@ def get_season_month(data):
     return data.loc[id_369]
 
 
+def drop_y(data:pd.DataFrame, y_name):
+    if y_name in data.columns:
+        data = data.drop([y_name], axis=1)
+    return data
+
+
+def drop_1_month(data):
+    data = data[data.index.month != 1]
+    return data
+
+
 def build_xxzb(data_name, v_xx, type, logical_tb, org_data, y_name):
 
+    # logical_tb, org_data = build_table(data_name, type, sheet_Vn)
     y_tb = org_data[y_name]
+    y_tb = drop_1_month(y_tb)
     y_tb = y_tb.dropna()
     y_start_month = y_tb.index[0]
-    y_tb_ad = y_tb.reset_index()
-    y_tb_ad["日期"] = y_tb_ad["日期"].apply(datetime_to_zh)
-    y_tb_ad = add_first_row(y_tb_ad, [np.nan])
+    y_freq = get_zb_freq(y_tb)
+
+    if y_freq == "S":
+        y_tb_ad = y_tb.reset_index()
+        y_tb_ad["日期"] = y_tb_ad["日期"].apply(datetime_to_zh)
+        y_tb_ad = add_first_row(y_tb_ad, [np.nan])
+
+        xianxing_max = max(logical_tb['先行期数']) * 3
+        org_data = add_index(org_data, xianxing_max)
+
+        M_zb = list(logical_tb[logical_tb['频率'] == 'M']['指标名称'])
+        M_xianxing = list(logical_tb[logical_tb['频率'] == 'M']['先行期数'])
+
+        M_tb = pd.DataFrame(index=org_data.index)
+
+        for i, zb in enumerate(M_zb):
+            ser = org_data[zb]
+            ser = ser.shift(M_xianxing[i] * 3)
+            M_tb[zb] = ser
+
+        M_tb = M_tb.loc[y_start_month:]
+        M_tb = drop_1_month(M_tb)
+
+        M_tb_ad = M_tb.reset_index(drop=False)
+        M_tb_ad["日期"] = M_tb_ad["日期"].apply(datetime_to_zh)
+        M_xianxing = [i*3 for i in M_xianxing]
+        M_xx = add_first_row(M_tb_ad, M_xianxing)
+        M_xx = drop_y(M_xx, y_name)
 
 
-    org_data = org_data.loc[y_start_month:]
 
-    M_zb = list(logical_tb[logical_tb['频率'] == 'M']['指标名称'])
-    M_xianxing = list(logical_tb[logical_tb['频率'] == 'M']['先行期数'])
+        S_zb = list(logical_tb[logical_tb['频率'] == 'S']['指标名称'])
+        S_xianxing = list(logical_tb[logical_tb['频率'] == 'S']['先行期数'])
 
-    M_tb = pd.DataFrame(index=org_data.index)
-    for i, zb in enumerate(M_zb):
-        ser = org_data[zb]
-        ser = ser.shift(M_xianxing[i])
-        M_tb[zb] = ser
-    M_tb_ad = M_tb.reset_index(drop=False)
-    M_tb_ad["日期"] = M_tb_ad["日期"].apply(datetime_to_zh)
-    M_xx = add_first_row(M_tb_ad, M_xianxing)
+        S_tb = pd.DataFrame(index=org_data.index)
+        for i, zb in enumerate(S_zb):
+            ser = org_data[zb]
+            ser = ser.shift(S_xianxing[i])
+            S_tb[zb] = ser
 
+        S_tb = S_tb.loc[y_start_month:]
+        S_tb = get_season_month(S_tb)
+        S_tb_ad = S_tb.reset_index(drop=False)
+        S_tb_ad["日期"] = S_tb_ad["日期"].apply(datetime_to_zh)
+        S_xx = add_first_row(S_tb_ad, S_xianxing)
+        S_xx = drop_y(S_xx, y_name)
 
-    S_zb = list(logical_tb[logical_tb['频率'] == 'S']['指标名称'])
-    S_xianxing = list(logical_tb[logical_tb['频率'] == 'S']['先行期数'])
-
-    S_tb = pd.DataFrame(index=org_data.index)
-    for i, zb in enumerate(S_zb):
-        ser = org_data[zb]
-        ser = ser.shift(S_xianxing[i]*3)
-        S_tb[zb] = ser
-    S_tb = get_season_month(S_tb)
-    S_tb_ad = S_tb.reset_index(drop=False)
-    S_tb_ad["日期"] = S_tb_ad["日期"].apply(datetime_to_zh)
-    S_xx = add_first_row(S_tb_ad, S_xianxing)
 
     output_2type_tb(data_name, type, y_tb_ad, M_xx, S_xx, v_xx=v_xx, v_js=None)
     return M_xx, S_xx
@@ -282,6 +320,7 @@ def build_xxzb(data_name, v_xx, type, logical_tb, org_data, y_name):
 def build_jsbl(data_name, V_xx, V_js, type, logical_tb, org_data, y_name, M_xx, S_xx):
 
     y_tb = org_data[y_name]
+    y_tb = drop_1_month(y_tb)
     y_tb = y_tb.dropna()
     y_start_month = y_tb.index[0]
     y_tb_ad = y_tb.reset_index()
@@ -289,26 +328,33 @@ def build_jsbl(data_name, V_xx, V_js, type, logical_tb, org_data, y_name, M_xx, 
     y_tb_ad = add_first_row(y_tb_ad, [np.nan])
 
 
-    org_data = org_data.loc[y_start_month:]
+    # org_data = org_data.loc[y_start_month:]
 
     M_zb = list(logical_tb[logical_tb['频率'] == 'M']['指标名称'])
     M_zhihou = list(logical_tb[logical_tb['频率'] == 'M']['滞后期数'])
 
     M_tb = org_data[M_zb]
+    M_tb = M_tb.loc[y_start_month:]
+    M_tb = drop_1_month(M_tb)
     M_tb_ad = M_tb.reset_index(drop=False)
     M_tb_ad["日期"] = M_tb_ad["日期"].apply(datetime_to_zh)
     M_js = add_first_row(M_tb_ad, M_zhihou)
+    M_js = drop_y(M_js, y_name)
+
 
 
     S_zb = list(logical_tb[logical_tb['频率'] == 'S']['指标名称'])
     S_zhihou = list(logical_tb[logical_tb['频率'] == 'S']['滞后期数'])
 
     S_tb = org_data[S_zb]
+    S_tb = S_tb.loc[y_start_month:]
     S_tb = get_season_month(S_tb)
 
     S_tb_ad = S_tb.reset_index(drop=False)
     S_tb_ad["日期"] = S_tb_ad["日期"].apply(datetime_to_zh)
     S_js = add_first_row(S_tb_ad, S_zhihou)
+    S_js = drop_y(S_js, y_name)
+
 
 
     M_js = M_js[['日期'] + list(set(M_js.columns) - set(M_xx.columns))]
@@ -385,7 +431,7 @@ def get_outcome(data_name_list):
             logical_cat_tb = logical_cat_tb.drop(["滞后期数"], axis=1)
             logical_tb_name = f"./result/{data_name}-逻辑表-解释变量{v_js}-先行指标{v_xx}.xlsx"
             logical_cat_tb.to_excel(logical_tb_name, index=False)
-            print(f"Finish output excel", logical_tb_name)
+            print(f"Finish output excel ", logical_tb_name)
 
 
 def main(data_name_list):
