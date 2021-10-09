@@ -5,6 +5,25 @@ import sys
 
 
 # ---Helper functions
+def generate_time(year, month, k):
+    """
+    用于生成 y年m月 之后 k 期的月份名称
+    :param k: 是k期，不包括本月
+    :return: 返回的是一个list
+    """
+    date = []
+    for i in range(k):
+        if month < 12:
+            month = month + 1
+        elif month == 12:
+            year = year + 1
+            month = 1
+        if month < 10:
+            m = '0' + str(month)
+            date.append('%s年%s月' % (year, m))
+        else:
+            date.append('%s年%s月' % (year, month))
+    return date
 
 
 def output(file_name, frequency, y, rst):
@@ -91,6 +110,16 @@ def verify_freq(org_data, col_name):
         freq = "M"
     return freq
 
+def get_zb_qishu(ser):
+    """
+    :return: 前面空了几格
+    """
+    # ser = org_data["工业销售产值"]
+    i = len(ser)
+    while pd.isna(ser[i-1]):
+        i -= 1
+    return i
+
 
 def process_org_data(data_name, type):
     """
@@ -137,22 +166,6 @@ def process_org_data(data_name, type):
 
     return org_data
 
-
-# def get_zb_freq(org_data):
-#     """
-#     用于处理两种表格里面包含的指标
-#     :param org_data: 原始表
-#     :zb_name: 储存了这个表格需要用到的名称
-#     :return:
-#     """
-#     zb_names = org_data.columns
-#     zb_freq_list = []
-#     for x_name in zb_names:
-#         if x_name != '日期':
-#             freq = verify_freq(org_data, x_name)    # 调用了 verify_freq 函数
-#             print(freq)
-#             zb_freq_list.append(freq)
-#             return zb_freq_list
 
 def drop_tb_na(tb: pd.DataFrame):
     """
@@ -237,8 +250,8 @@ def build_table(data_name, type, sheet_Vn, org_data, y_name):
 
     # eg
     # data_name = '地区生产总值-江门'
-    # sheet_Vn = 'V4'
-    # org_data = process_org_data(data_name, '地区生产总值')
+    # sheet_Vn = 'V1'
+    # org_data = process_org_data(data_name, type)
     # type = '解释变量'
     # y_name = '地区生产总值'
 
@@ -253,7 +266,14 @@ def build_table(data_name, type, sheet_Vn, org_data, y_name):
     zb_qishu = list(zb_data['先行期数'])  # qs是期数的意思，指先行期数，是读取的，没有调整单位
 
     org_data = org_data.loc[:, ['日期'] + zb_names]  # 从原始数据中筛选出需要用的指标数据
-    org_data = org_data.reset_index()  # 重新定义index
+    org_data = org_data.reset_index().drop(["index"], axis=1)  # 重新定义index
+
+    # if type == "先行指标":
+    #     zb_zhihou = zb_qishu
+    # if type == "解释变量":
+    #     zb_zhihou = org_data.apply(get_zb_qishu)
+    #     zb_zhihou = list(zb_zhihou - zb_zhihou[1])[1:]   # 这个是不包括日期的
+
 
     zb_freq_list = []  # 记录了每个指标的频率
     zb_start_Y_list = []  # 记录了每个指标的起始年份
@@ -309,61 +329,86 @@ def build_table(data_name, type, sheet_Vn, org_data, y_name):
 
     # 先按照 zb_freq_list 区分 M 和 S
     M_index = []
+    M_names = []
     S_index = []
-    for i, x_name in enumerate(zb_names):
+    S_names = []
+    for i, x_name in enumerate(zb_names):     # zb 是不包括日期的
         if x_name != y_name:
             if zb_freq_list[i] == 'M':
                 M_index.append(i)
+                M_names.append(x_name)
             elif zb_freq_list[i] == 'S':
                 S_index.append(i)
+                S_names.append(x_name)
 
-    # 处理 M 的数据
 
-    # 因为需要向后推移数据，所以记录可能出现的推移的长度
-    # zb_qishu[M_index] 有可能是空 array，即没有月度指标的情况
-    if not zb_qishu[M_index].size:
-        len_add = 0
-    else:
-        len_add = max(zb_qishu[M_index])
+    if type == "先行指标":
 
-    # 月度指标最终的长度是 元数据的长度 + 推移的长度
-    len_max_M = len(org_data) + len_add
+        # 处理 M 的数据
 
-    # 新建一个dictionary用来储存每个指标，因为长度可能不一致，不能直接变成 DataFrame
-    M_tb = {}
-    M_tb['日期'] = list(org_data['日期']) + [np.nan] * (len_max_M - len(org_data))
+        # 因为需要向后推移数据，所以记录可能出现的推移的长度
+        # zb_qishu[M_index] 有可能是空 array，即没有月度指标的情况
+        if not zb_qishu[M_index].size:
+            len_add = 0
+        else:
+            len_add = max(zb_qishu[M_index])
 
-    qishu_M = []  # 记录先行期数
-    for i, x_name in enumerate(zb_names[M_index]):
-        qishu_M.append(zb_qishu[i])  # 记录月度数据的先行期数
-        x_data = list(org_data[x_name])  # 将指标数据转化成list，方便添加nan
-        x_data = [np.nan] * zb_qishu[i] + x_data  # 根据先行期数在某一指标数据前添加nan
-        x_data = x_data + [np.nan] * (len_max_M - len(x_data))  # 在后面补全nan
-        M_tb[x_name] = x_data  # 将处理好的某一指标数据添加到 dict M_tb 中
+        # 月度指标最终的长度是 元数据的长度 + 推移的长度
+        len_max_M = len(org_data) + len_add
 
-    M_tb = pd.DataFrame(M_tb)  # 将 dictionary 改成 pd.DataFrame
-    M_tb = M_tb.dropna(subset=['日期'])  # 删除日期中的空值
-    M_tb.iloc[0, 1:] = qishu_M  # 将第一行改成先行期数
+        # 新建一个dictionary用来储存每个指标，因为长度可能不一致，不能直接变成 DataFrame
+        M_tb = {}
+        M_tb['日期'] = list(org_data['日期']) + [np.nan] * (len_max_M - len(org_data))
 
-    # 处理 S 数据，需要先对 org_data 进行3 6 9月的筛选
-    org_data_S = drop_no_369_month(org_data)
-    if not zb_qishu[S_index].size:
-        len_add = 0
-    else:
-        len_add = max(zb_qishu[S_index])
-    len_max_S = len(org_data_S) + len_add
-    S_tb = {}
-    S_tb['日期'] = list(org_data_S['日期']) + [np.nan] * (len_max_S - len(org_data_S))
-    qs_S = []
-    for i, x_name in enumerate(zb_names[S_index]):
-        qs_S.append(zb_qishu[i])
-        x_data = list(org_data_S[x_name])
-        x_data = [np.nan] * zb_qishu[i] + x_data
-        x_data = x_data + [np.nan] * (len_max_S - len(x_data))
-        S_tb[x_name] = x_data
-    S_tb = pd.DataFrame(S_tb)
-    S_tb = S_tb.dropna(subset=['日期'])
-    S_tb.iloc[0, 1:] = qs_S
+        qishu_M = []  # 记录先行期数
+        for i, x_name in enumerate(zb_names[M_index]):
+            qishu_M.append(zb_qishu[i])  # 记录月度数据的先行期数
+            x_data = list(org_data[x_name])  # 将指标数据转化成list，方便添加nan
+            x_data = [np.nan] * zb_qishu[i] + x_data  # 根据先行期数在某一指标数据前添加nan
+            x_data = x_data + [np.nan] * (len_max_M - len(x_data))  # 在后面补全nan
+            M_tb[x_name] = x_data  # 将处理好的某一指标数据添加到 dict M_tb 中
+
+        M_tb = pd.DataFrame(M_tb)  # 将 dictionary 改成 pd.DataFrame
+        M_tb = M_tb.dropna(subset=['日期'])  # 删除日期中的空值
+        M_tb.iloc[0, 1:] = qishu_M  # 将第一行改成先行期数
+
+        # 处理 S 数据，需要先对 org_data 进行3 6 9月的筛选
+        org_data_S = drop_no_369_month(org_data)
+        if not zb_qishu[S_index].size:
+            len_add = 0
+        else:
+            len_add = max(zb_qishu[S_index])
+        len_max_S = len(org_data_S) + len_add
+        S_tb = {}
+        S_tb['日期'] = list(org_data_S['日期']) + [np.nan] * (len_max_S - len(org_data_S))
+        qs_S = []
+        for i, x_name in enumerate(zb_names[S_index]):
+            qs_S.append(zb_qishu[i])
+            x_data = list(org_data_S[x_name])
+            x_data = [np.nan] * zb_qishu[i] + x_data
+            x_data = x_data + [np.nan] * (len_max_S - len(x_data))
+            S_tb[x_name] = x_data
+        S_tb = pd.DataFrame(S_tb)
+        S_tb = S_tb.dropna(subset=['日期'])
+        S_tb.iloc[0, 1:] = qs_S
+
+    if type == "解释变量":
+        M_tb = org_data.loc[:, ['日期', y_name] + M_names]
+        M_zhihou = M_tb.apply(get_zb_qishu)
+        M_zhihou = M_zhihou - M_zhihou[1]
+
+        M_tb.iloc[0, 1:] = M_zhihou[1:]
+        M_tb = M_tb.drop([y_name], axis=1)
+
+
+        S_tb = org_data.loc[:, ['日期', y_name] + S_names]
+        S_zhihou = S_tb.apply(get_zb_qishu)
+        S_zhihou = S_zhihou - S_zhihou[1]
+
+        S_tb.iloc[0, 1:] = S_zhihou[1:]
+        S_tb = S_tb.drop([y_name], axis=1)
+
+
 
     # 这里将 解释变量 和 先行指标 两个表格输出
     output_2type_tb(data_name, sheet_Vn, type, y_tb, M_tb, S_tb)
@@ -389,6 +434,8 @@ def get_outcome(data_name_list):
     :param sheet_Vn_list:  包括 sheet_Vn 的 list
     :param type_list:      ['解释变量', '先行指标']
     """
+
+    # data_name_list = ["地区生产总值-江门"]
     type_list = ['解释变量', '先行指标']
     for data_name in data_name_list:
         for type in type_list:
@@ -405,6 +452,8 @@ def get_outcome(data_name_list):
         Vn_pairs = check_Vn(v_jsbl_list, v_xxzb_list)
 
         for (v_jsbl, v_xxzb) in Vn_pairs:
+            # v_jsbl = "V1"
+            # v_xxzb = "V1"
             logical_tbs = []
 
             type = "先行指标"
@@ -448,4 +497,4 @@ def main(data_name_list):
 
 
 if __name__ == '__main__':
-    main(data_name_list=["地区生产总值-中山", "地区生产总值-江门"])
+    main(data_name_list=["地区生产总值-江门"])
