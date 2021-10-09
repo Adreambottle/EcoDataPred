@@ -137,9 +137,9 @@ def process_org_data(data_name, type, sheet_Vn):
     """
 
 
-    # data_name = '地区生产总值-江门'
-    # sheet_Vn = 'V1'
-    # type = '解释变量'
+    # data_name = '地区生产总值-北京'
+    # sheet_Vn = 'v5'
+    # type = '先行指标'
     # y_name = '地区生产总值'
     # org_data = process_org_data(data_name, '地区生产总值')
 
@@ -156,6 +156,7 @@ def process_org_data(data_name, type, sheet_Vn):
     org_data['日期'] = org_data['日期'].apply(zh_to_datetime)
     org_data.set_index(["日期"], inplace=True)
 
+    # print(type, sheet_Vn)
     zb_use = list(pd.read_excel('./data/' + data_name + type_full + '.xlsx', sheet_name=sheet_Vn)["指标名称"])
     org_data = org_data[zb_use]
 
@@ -321,13 +322,13 @@ def build_jsbl(data_name, V_xx, V_js, type, logical_tb, org_data, y_name, M_xx, 
 
 
 
-def check_Vn(v_jsbl: list, v_xxzb: list):
-    if v_jsbl == v_xxzb:
-        return list(zip(v_jsbl, v_xxzb))
+def check_Vn(v_xx_list: list, v_js_list: list):
+    if v_js_list == v_xx_list:
+        return list(zip(v_js_list, v_xx_list))
     else:
         permutation = []
-        for i in v_jsbl:
-            for j in v_xxzb:
+        for i in v_xx_list:
+            for j in v_js_list:
                 permutation.append((i, j))
         return permutation
 
@@ -354,9 +355,9 @@ def get_outcome(data_name_list):
         v_xx_list = pd.ExcelFile('./data/' + data_name + type_full + '.xlsx').sheet_names
         v_xx_list = [i for i in v_xx_list if i[0] in ['v', 'V']]
 
-        Vn_pairs = check_Vn(v_js_list, v_xx_list)
+        Vn_pairs = check_Vn(v_xx_list, v_js_list)
 
-        for (v_js, v_xx) in Vn_pairs:
+        for (v_xx, v_js) in Vn_pairs:
             # v_js = "v1"
             # v_xx = "v1"
 
@@ -371,7 +372,7 @@ def get_outcome(data_name_list):
             logical_tbs.append(logical_tb)
 
             type = "解释变量"
-            logical_tb, org_data = build_table(data_name, type, v_xx)
+            logical_tb, org_data = build_table(data_name, type, v_js)
             y_name = org_data.columns[0]
             build_jsbl(data_name, v_xx, v_js, type, logical_tb, org_data, y_name, M_xx, S_xx)
 
@@ -391,4 +392,4 @@ def main(data_name_list):
     get_outcome(data_name_list)
 
 if __name__ == '__main__':
-    main(data_name_list=["地区生产总值-江门"])
+    main(data_name_list=["地区生产总值-江门", "地区生产总值-中山"])
