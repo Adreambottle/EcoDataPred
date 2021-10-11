@@ -144,7 +144,7 @@ def process_org_data(data_name, type, sheet_Vn):
     筛选原始数据
     :param data_name:  数据的名称，一般是 y + 城市名字
     :param type: 是 解释变量 or 先行指标
-    :param y_name: y 的名称，需要传入
+    :param sheet_Vn 读取的 解释变量 or 先行指标 是哪个 sheet
     :return:
     """
 
@@ -177,6 +177,13 @@ def process_org_data(data_name, type, sheet_Vn):
 
 
 def build_table(data_name, type, sheet_Vn):
+    """
+    构建逻辑表格
+    :param data_name: 表格的名字 '地区生产总值-江门'
+    :param type: "解释变量" "先行指标"
+    :param sheet_Vn: 是第几个 sheet
+    :return: 返回逻辑表
+    """
 
     # eg
     # data_name = '地区生产总值-江门'
@@ -467,6 +474,7 @@ def check_Vn(v_xx_list: list, v_js_list: list):
     """
     if v_js_list == v_xx_list:
         return list(zip(v_js_list, v_xx_list))
+
     else:
         permutation = []
         for i in v_xx_list:
