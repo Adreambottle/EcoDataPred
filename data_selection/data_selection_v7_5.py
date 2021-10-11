@@ -4,6 +4,11 @@ import re
 from datetime import datetime, timedelta
 
 def zh_to_datetime(date):
+    """
+    将中文的 str "2020年3月" 转换成 datetime.datetime 格式
+    :param date: 中文版本的日期
+    :return: 返回 date.datetime
+    """
     year, month = re.split('年|月', date)[:2]
     year = int(year)
     if len(month) == 1:
@@ -17,7 +22,11 @@ def zh_to_datetime(date):
 
 
 def datetime_to_zh(date):
-
+    """
+    将 datetime.datetime 转换成中文的 str "2020年3月" 格式
+    :param date: datetime.datetime 格式
+    :return: 返回中文str
+    """
     if date.month < 10:
         Month = "0" + str(date.month)
     else:
@@ -47,20 +56,13 @@ def generate_time(year, month, k:int):
     return date_index_list
 
 
-def add_index(data:pd.DataFrame, k):
-    # data = org_data
-    data_index = data.index
-    now = data_index[-1]
-    index_add = pd.date_range(start=now, periods=k+1, freq='MS')[1:]
-    for i in range(len(index_add)):
-        data.loc[index_add[i]] = np.nan
-    return data
-
 
 
 def get_zb_zhihou(ser):
     """
-    :return: 前面空了几格
+    根据结尾判断滞后期数
+    :param ser:
+    :return:
     """
     # ser = org_data["工业销售产值"]
     i = len(ser)
@@ -147,8 +149,8 @@ def process_org_data(data_name, type, sheet_Vn):
     """
 
 
-    # data_name = '地区生产总值-北京'
-    # sheet_Vn = 'v1'
+    # data_name = '地区生产总值-江门'
+    # sheet_Vn = 'V1'
     # type = '先行指标'
     # y_name = '地区生产总值'
     # org_data = process_org_data(data_name, type, sheet_Vn)
@@ -229,6 +231,12 @@ def build_table(data_name, type, sheet_Vn):
 
 
 def add_first_row(tb, ser):
+    """
+    在 table 的第一行添加之后期数这一行
+    :param tb:
+    :param ser:
+    :return:
+    """
     new_tb = pd.DataFrame(columns=tb.columns)
     first_row = ["特征滞后期数"] + list(ser)
     new_tb.loc[0,:] = first_row
@@ -236,7 +244,30 @@ def add_first_row(tb, ser):
     return new_tb
 
 
+def add_index(data:pd.DataFrame, k):
+    """
+    因为需要根据先行期数将数据进行shift操作
+    需要将后续的日期补全
+    :param data:
+    :param k:
+    :return:
+    """
+    # data = org_data
+    data_index = data.index
+    now = data_index[-1]
+    index_add = pd.date_range(start=now, periods=k+1, freq='MS')[1:]
+
+    for i in range(len(index_add)):
+        data.loc[index_add[i]] = np.nan
+    return data
+
+
 def get_season_month(data):
+    """
+    只取月份是 3， 6， 9， 12 的数据，作为季度数据
+    :param data:
+    :return:
+    """
     index = data.index
     id_369 = []
     for id in index:
@@ -246,21 +277,56 @@ def get_season_month(data):
 
 
 def drop_y(data:pd.DataFrame, y_name):
+    """
+    删除变量中的 y
+    :param data:
+    :param y_name:
+    :return:
+    """
     if y_name in data.columns:
         data = data.drop([y_name], axis=1)
     return data
 
 
 def drop_1_month(data):
+    """
+    删除 1 月份的数据
+    :param data:
+    :return:
+    """
     data = data[data.index.month != 1]
     return data
 
 
+def drop_na_tail(data):
+    """
+    删去尾部全部都是na的数据
+    :param data:
+    :return:
+    """
+    if data.shape[0] > 0:
+        i = data.shape[0] - 1
+        while all(pd.isna(data.iloc[i, :])):
+            data = data[:i]
+            i = i - 1
+    return data
+
+
 def build_xxzb(data_name, v_xx, type, logical_tb, org_data, y_name):
+    """
+    构建先行指标这个 table
+    :param data_name: 数据的名称
+    :param v_xx: 先行指标的 sheet Number
+    :param type: "先行指标" or "解释变量"
+    :param logical_tb: 传入的逻辑表
+    :param org_data: 处理好的原始数据
+    :param y_name: 作为y的变量
+    :return: 先行指标的季度和月度表格，需要传给构建解释变量的函数
+    """
 
     # logical_tb, org_data = build_table(data_name, type, sheet_Vn)
+    org_data = drop_1_month(org_data)
     y_tb = org_data[y_name]
-    y_tb = drop_1_month(y_tb)
     y_tb = y_tb.dropna()
     y_start_month = y_tb.index[0]
     y_freq = get_zb_freq(y_tb)
@@ -271,7 +337,9 @@ def build_xxzb(data_name, v_xx, type, logical_tb, org_data, y_name):
         y_tb_ad = add_first_row(y_tb_ad, [np.nan])
 
         xianxing_max = max(logical_tb['先行期数']) * 3
-        org_data = add_index(org_data, xianxing_max)
+        org_data = add_index(org_data, xianxing_max + 10)
+        org_data = drop_1_month(org_data)
+
 
         M_zb = list(logical_tb[logical_tb['频率'] == 'M']['指标名称'])
         M_xianxing = list(logical_tb[logical_tb['频率'] == 'M']['先行期数'])
@@ -284,7 +352,10 @@ def build_xxzb(data_name, v_xx, type, logical_tb, org_data, y_name):
             M_tb[zb] = ser
 
         M_tb = M_tb.loc[y_start_month:]
-        M_tb = drop_1_month(M_tb)
+        try:  # 我也不知道为什么会报错，那就这样吧
+            M_tb = drop_na_tail(M_tb)
+        except:
+            M_tb = M_tb
 
         M_tb_ad = M_tb.reset_index(drop=False)
         M_tb_ad["日期"] = M_tb_ad["日期"].apply(datetime_to_zh)
@@ -304,11 +375,14 @@ def build_xxzb(data_name, v_xx, type, logical_tb, org_data, y_name):
             S_tb[zb] = ser
 
         S_tb = S_tb.loc[y_start_month:]
+        S_tb = drop_na_tail(S_tb)
+
         S_tb = get_season_month(S_tb)
         S_tb_ad = S_tb.reset_index(drop=False)
         S_tb_ad["日期"] = S_tb_ad["日期"].apply(datetime_to_zh)
         S_xx = add_first_row(S_tb_ad, S_xianxing)
         S_xx = drop_y(S_xx, y_name)
+
 
 
     output_2type_tb(data_name, type, y_tb_ad, M_xx, S_xx, v_xx=v_xx, v_js=None)
@@ -317,7 +391,20 @@ def build_xxzb(data_name, v_xx, type, logical_tb, org_data, y_name):
 
 
 
-def build_jsbl(data_name, V_xx, V_js, type, logical_tb, org_data, y_name, M_xx, S_xx):
+def build_jsbl(data_name, v_xx, v_js, type, logical_tb, org_data, y_name, M_xx, S_xx):
+    """
+    构建解释变量这个表格
+    :param data_name: 表格的名称
+    :param v_xx: 先行指标的 sheet_number
+    :param v_js: 解释变量的 sheet_number
+    :param type: "解释变量" or "先行指标"
+    :param logical_tb: 传入的逻辑表
+    :param org_data: 传入的处理好的原始数据
+    :param y_name: 变量 y 的名字
+    :param M_xx: 先行指标表格的月份指标 table M
+    :param S_xx: 线性指标表格的月份指标 table S
+    :return:
+    """
 
     y_tb = org_data[y_name]
     y_tb = drop_1_month(y_tb)
@@ -333,9 +420,10 @@ def build_jsbl(data_name, V_xx, V_js, type, logical_tb, org_data, y_name, M_xx, 
     M_zb = list(logical_tb[logical_tb['频率'] == 'M']['指标名称'])
     M_zhihou = list(logical_tb[logical_tb['频率'] == 'M']['滞后期数'])
 
+    org_data = drop_1_month(org_data)
     M_tb = org_data[M_zb]
     M_tb = M_tb.loc[y_start_month:]
-    M_tb = drop_1_month(M_tb)
+    # M_tb = drop_1_month(M_tb)
     M_tb_ad = M_tb.reset_index(drop=False)
     M_tb_ad["日期"] = M_tb_ad["日期"].apply(datetime_to_zh)
     M_js = add_first_row(M_tb_ad, M_zhihou)
@@ -363,12 +451,20 @@ def build_jsbl(data_name, V_xx, V_js, type, logical_tb, org_data, y_name, M_xx, 
     M_tb_cb = pd.merge(M_xx, M_js, how="outer", on="日期")
     S_tb_cb = pd.merge(S_xx, S_js, how="outer", on="日期")
 
-    output_2type_tb(data_name, type, y_tb_ad, M_tb_cb, S_tb_cb, V_xx, V_js)
+    output_2type_tb(data_name, type, y_tb_ad, M_tb_cb, S_tb_cb, v_xx, v_js)
 
 
 
 
 def check_Vn(v_xx_list: list, v_js_list: list):
+    """
+    查看先行指标和解释变量的 sheet number 能否对应上
+    如果能对应上只是用单独的 sheet number
+    如果对应不上则使用 排列组合
+    :param v_xx_list:
+    :param v_js_list:
+    :return: 返回一个先行指标和解释变量的pair
+    """
     if v_js_list == v_xx_list:
         return list(zip(v_js_list, v_xx_list))
     else:
@@ -384,8 +480,6 @@ def get_outcome(data_name_list):
     """
     构建表格
     :param data_name_list: 包括 data_name 的 list
-    :param sheet_Vn_list:  包括 sheet_Vn 的 list
-    :param type_list:      ['解释变量', '先行指标']
     """
 
     # data_name_list = ["地区生产总值-北京"]
