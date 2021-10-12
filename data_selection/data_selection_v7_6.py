@@ -68,7 +68,7 @@ def get_zb_zhihou(ser):
     i = len(ser)
     while pd.isna(ser[i-1]):
         i -= 1
-    return i
+    return -i
 
 
 def get_zb_freq(ser):
