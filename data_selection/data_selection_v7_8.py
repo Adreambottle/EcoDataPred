@@ -3,6 +3,9 @@ import pandas as pd
 import re
 from datetime import datetime, timedelta
 
+import cProfile
+# cProfile.run('main(data_name_list=["规模以上工业增加值-许昌", "地区生产总值-中山"])')
+
 def zh_to_datetime(date):
     """
     将中文的 str "2020年3月" 转换成 datetime.datetime 格式
@@ -84,7 +87,7 @@ def get_zb_freq(ser):
     month_list = ser.index.month
 
     if (10 not in month_list) and (3 in month_list):
-        freq = "S"
+        freq = "Q"
     if (10 not in month_list) and (3 not in month_list):
         freq = "Y"
     if (10 in month_list) and (3 in month_list):
@@ -338,57 +341,66 @@ def build_xxzb(data_name, v_xx, type, logical_tb, org_data, y_name):
     y_start_month = y_tb.index[0]
     y_freq = get_zb_freq(y_tb)
 
-    if y_freq == "S":
-        y_tb_ad = y_tb.reset_index()
-        y_tb_ad["日期"] = y_tb_ad["日期"].apply(datetime_to_zh)
-        y_tb_ad = add_first_row(y_tb_ad, [np.nan])
 
-        xianxing_max = max(logical_tb['先行期数']) * 3
-        org_data = add_index(org_data, xianxing_max + 10)
-        org_data = drop_1_month(org_data)
+    y_tb_ad = y_tb.reset_index()
+    y_tb_ad["日期"] = y_tb_ad["日期"].apply(datetime_to_zh)
+    y_tb_ad = add_first_row(y_tb_ad, [np.nan])
+
+    xianxing_max = max(logical_tb['先行期数']) * 3
+    org_data = add_index(org_data, xianxing_max + 10)
+    org_data = drop_1_month(org_data)
 
 
-        M_zb = list(logical_tb[logical_tb['频率'] == 'M']['指标名称'])
-        M_xianxing = list(logical_tb[logical_tb['频率'] == 'M']['先行期数'])
+    M_zb = list(logical_tb[logical_tb['频率'] == 'M']['指标名称'])
+    M_xianxing = list(logical_tb[logical_tb['频率'] == 'M']['先行期数'])
 
-        M_tb = pd.DataFrame(index=org_data.index)
+    M_tb = pd.DataFrame(index=org_data.index)
 
-        for i, zb in enumerate(M_zb):
-            ser = org_data[zb]
+    for i, zb in enumerate(M_zb):
+        ser = org_data[zb]
+
+        if y_freq == "Q":
             ser = ser.shift(M_xianxing[i] * 3)
-            M_tb[zb] = ser
+        if y_freq == "M":
+            ser = ser.shift(M_xianxing[i])
+        M_tb[zb] = ser
 
-        M_tb = M_tb.loc[y_start_month:]
-        try:  # 我也不知道为什么会报错，那就这样吧
-            M_tb = drop_na_tail(M_tb)
-        except:
-            M_tb = M_tb
+    M_tb = M_tb.loc[y_start_month:]
+    try:  # 我也不知道为什么会报错，那就这样吧
+        M_tb = drop_na_tail(M_tb)
+    except:
+        M_tb = M_tb
 
-        M_tb_ad = M_tb.reset_index(drop=False)
-        M_tb_ad["日期"] = M_tb_ad["日期"].apply(datetime_to_zh)
-        M_xianxing = [i*3 for i in M_xianxing]
-        M_xx = add_first_row(M_tb_ad, M_xianxing)
-        M_xx = drop_y(M_xx, y_name)
+    M_tb_ad = M_tb.reset_index(drop=False)
+    M_tb_ad["日期"] = M_tb_ad["日期"].apply(datetime_to_zh)
+    if y_freq == "Q":
+        M_xianxing = [i * 3 for i in M_xianxing]
+
+    M_xx = add_first_row(M_tb_ad, M_xianxing)
+    M_xx = drop_y(M_xx, y_name)
 
 
 
-        S_zb = list(logical_tb[logical_tb['频率'] == 'S']['指标名称'])
-        S_xianxing = list(logical_tb[logical_tb['频率'] == 'S']['先行期数'])
+    S_zb = list(logical_tb[logical_tb['频率'] == 'S']['指标名称'])
+    S_xianxing = list(logical_tb[logical_tb['频率'] == 'S']['先行期数'])
 
-        S_tb = pd.DataFrame(index=org_data.index)
-        for i, zb in enumerate(S_zb):
-            ser = org_data[zb]
-            ser = ser.shift(S_xianxing[i])
-            S_tb[zb] = ser
+    S_tb = pd.DataFrame(index=org_data.index)
+    for i, zb in enumerate(S_zb):
+        ser = org_data[zb]
+        ser = ser.shift(S_xianxing[i])
+        S_tb[zb] = ser
 
-        S_tb = S_tb.loc[y_start_month:]
+    S_tb = S_tb.loc[y_start_month:]
+    try:
         S_tb = drop_na_tail(S_tb)
+    except:
+        S_tb = S_tb
 
-        S_tb = get_season_month(S_tb)
-        S_tb_ad = S_tb.reset_index(drop=False)
-        S_tb_ad["日期"] = S_tb_ad["日期"].apply(datetime_to_zh)
-        S_xx = add_first_row(S_tb_ad, S_xianxing)
-        S_xx = drop_y(S_xx, y_name)
+    S_tb = get_season_month(S_tb)
+    S_tb_ad = S_tb.reset_index(drop=False)
+    S_tb_ad["日期"] = S_tb_ad["日期"].apply(datetime_to_zh)
+    S_xx = add_first_row(S_tb_ad, S_xianxing)
+    S_xx = drop_y(S_xx, y_name)
 
 
 
@@ -540,4 +552,4 @@ def main(data_name_list):
     get_outcome(data_name_list)
 
 if __name__ == '__main__':
-    main(data_name_list=["地区生产总值-江门", "地区生产总值-中山"])
+    main(data_name_list=["规模以上工业增加值-许昌", "地区生产总值-中山"])
